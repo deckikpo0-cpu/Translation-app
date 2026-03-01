@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Speak & Translate Notebook (Nigerian Languages)</title>
+<style>
+  body { font-family: Arial; text-align: center; margin: 50px; background: #1a1a1a; color: #fff; }
+  h1 { font-size: 2em; color: #00ffcc; }
+  select, button { font-size: 16px; padding: 10px 20px; margin: 10px; cursor: pointer; }
+  #output { margin-top: 20px; font-size: 20px; line-height: 1.5em; }
+  #history { margin-top: 30px; max-height: 400px; overflow-y: auto; text-align: left; border-top: 1px solid #555; padding-top: 15px; }
+  .text-block { margin: 10px 0; }
+  #originalText { color: #ffcc00; }
+  #translatedText { color: #00ffcc; }
+  .history-entry { border-bottom: 1px solid #555; padding: 8px 0; cursor: pointer; }
+  .history-entry p { margin: 2px 0; font-size: 16px; }
+  .history-entry button { font-size: 14px; padding: 4px 8px; margin-right: 5px; cursor: pointer; }
+  .history-entry:hover { background: #333; }
+</style>
+</head>
+<body>
+
+<h1>🎤 Speak & Translate Notebook</h1>
+
+<label for="language">Choose Language:</label>
+<select id="language">
+  <option value="en-US">English</option>
+  <option value="es-ES">Spanish</option>
+  <option value="fr-FR">French</option>
+  <option value="de-DE">German</option>
+  <option value="it-IT">Italian</option>
+  <option value="pt-PT">Portuguese</option>
+  <option value="ru-RU">Russian</option>
+  <option value="zh-CN">Chinese (Simplified)</option>
+  <option value="ja-JP">Japanese</option>
+  <option value="ko-KR">Korean</option>
+  <option value="ar-SA">Arabic</option>
+  <option value="hi-IN">Hindi</option>
+  <option value="tr-TR">Turkish</option>
+  <option value="nl-NL">Dutch</option>
+  <option value="sv-SE">Swedish</option>
+  <option value="pl-PL">Polish</option>
+  <option value="he-IL">Hebrew</option>
+  <option value="vi-VN">Vietnamese</option>
+  <option value="th-TH">Thai</option>
+  <option value="id-ID">Indonesian</option>
+  <option value="fa-IR">Persian</option>
+  <option value="ig-NG">Igbo</option>
+  <option value="yo-NG">Yoruba</option>
+  <option value="ha-NG">Hausa</option>
+  <option value="pcm-NG">Nigerian Pidgin</option>
+</select>
+
+<br>
+<button id="startBtn">Start Speaking</button>
+<button id="speakBtn">Speak Translation</button>
+<button id="retranslateBtn">Re-Translate Edited Text</button>
+
+<div id="output">
+  <div class="text-block"><strong>Original:</strong> <span id="originalText"></span></div>
+  <div class="text-block"><strong>Translation:</strong> <span id="translatedText"></span></div>
+</div>
+
+<h2>🕘 Translation History</h2>
+<div id="history"></div>
+
+<script>
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+recognition.interimResults = true;
+recognition.lang = 'en-US';
+
+const startBtn = document.getElementById('startBtn');
+const speakBtn = document.getElementById('speakBtn');
+const retranslateBtn = document.getElementById('retranslateBtn');
+const originalTextEl = document.getElementById('originalText');
+const translatedTextEl = document.getElementById('translatedText');
+const languageSelect = document.getElementById('language');
+const historyEl = document.getElementById('history');
+
+let currentTranslation = '';
+let currentLang = 'en-US';
+let translating = false;
+let history = [];
+
+startBtn.addEventListener('click', () => {
+  originalTextEl.textContent = '';
+  translatedTextEl.textContent = '';
+  recognition.start();
+});
+
+// Live speech recognition
+recognition.addEventListener('result', async (event) => {
+  let transcript = '';
+  for(let i=event.resultIndex; i<event.results.length; i++){
+    transcript += event.results[i][0].transcript;
+  }
+
+  originalTextEl.textContent = transcript;
+
+  if(event.results[event.results.length-1].isFinal && !translating){
+    translating = true;
+    const targetLang = languageSelect.value;
+    currentLang = targetLang;
+
+    const textToTranslate = convertNumbersToWords(transcript);
+    currentTranslation = await translateText(textToTranslate, targetLang);
+
+    animateText(translatedTextEl, currentTranslation);
+
+    addToHistory(transcript, currentTranslation, targetLang);
+    translating = false;
+  }
+});
+
+recognition.addEventListener('end', () => {
+  console.log('Speech recognition ended.');
+});
+
+// Speak translation button
+speakBtn.addEventListener('click', () => {
+  if(currentTranslation){
+    speakText(currentTranslation, currentLang);
+  }
+});
+
+// Re-translate edited text
+retranslateBtn.addEventListener('click', async () => {
+  const editedText = originalTextEl.textContent;
+  if(editedText){
+    currentTranslation = await translateText(convertNumbersToWords(editedText), currentLang);
+    animateText(translatedTextEl, currentTranslation);
+    addToHistory(editedText, currentTranslation, currentLang);
+  }
+});
+
+// Convert digits to words
+function convertNumbersToWords(text){
+  const digits = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+  return text.replace(/\d/g, d => digits[d]);
+}
+
+// Translation using MyMemory API
+async function translateText(text, targetLang){
+  try {
+    let langCode = targetLang.split('-')[0];
+    // Fallback for Nigerian languages if MyMemory doesn't support
+    if(['ig','yo','ha','pcm'].includes(langCode)) return text; 
+    const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${langCode}`);
+    const data = await res.json();
+    if(data.responseData && data.responseData.translatedText){
+      return data.responseData.translatedText;
+    } else {
+      return '❌ Translation failed';
+    }
+  } catch(err){
+    console.error('Translation error:', err);
+    return '❌ Translation failed';
+  }
+}
+
+// Speak text in proper language
+function speakText(text, lang){
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  speechSynthesis.speak(utterance);
+}
+
+// Animate text letter by letter
+function animateText(element, text){
+  element.textContent = '';
+  let i=0;
+  const interval = setInterval(() => {
+    element.textContent += text[i];
+    i++;
+    if(i >= text.length) clearInterval(interval);
+  }, 50);
+}
+
+// Add translation to history
+function addToHistory(original, translated, lang){
+  const entry = { original, translated, lang };
+  history.unshift(entry);
+  renderHistory();
+}
+
+// Render interactive history
+function renderHistory(){
+  historyEl.innerHTML = '';
+  history.forEach((item, index) => {
+    const div = document.createElement('div');
+    div.className = 'history-entry';
+    div.innerHTML = `
+      <p><strong>Original:</strong> ${item.original}</p>
+      <p><strong>Translation (${item.lang}):</strong> ${item.translated}</p>
+      <button onclick="reSpeak(${index}, 'original')">🔊 Speak Original</button>
+      <button onclick="reSpeak(${index}, 'translated')">🔊 Speak Translation</button>
+    `;
+    // Fill main text area when clicked
+    div.addEventListener('click', (e) => {
+      if(e.target.tagName !== 'BUTTON'){
+        originalTextEl.textContent = item.original;
+        translatedTextEl.textContent = item.translated;
+        currentLang = item.lang;
+        currentTranslation = item.translated;
+      }
+    });
+    historyEl.appendChild(div);
+  });
+}
+
+// Replay speech from history
+function reSpeak(index, type){
+  const entry = history[index];
+  if(type === 'original') speakText(entry.original, 'en-US');
+  else speakText(entry.translated, entry.lang);
+}
+</script>
+
+</body>
+</html>
